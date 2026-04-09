@@ -41,9 +41,9 @@
     "spaces_endpoint": "https://nyc3.digitaloceanspaces.com"
   },
   "cloud": {
-    "enabled": false,
+    "enabled": true,
     "endpoint": "https://pienet-dashboard-8npw7.ondigitalocean.app/api/ingest",
-    "api_key": "",
+    "api_key": "75a8a2602daafb3c5b81dd6bc4e690d9f062f8edb896db57",
     "push_interval_seconds": 30,
     "stream_fps": 5
   }

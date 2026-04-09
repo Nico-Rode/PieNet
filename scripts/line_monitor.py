@@ -94,6 +94,7 @@ def load_config(path: str | None) -> dict:
             "endpoint": "",
             "api_key": "",
             "push_interval_seconds": 30,
+            "stream_fps": 5,
         },
     }
     if path and os.path.isfile(path):
@@ -546,6 +547,47 @@ class CloudPusher:
                 time.sleep(2 ** attempt)
 
 
+# ── WebSocket Streamer ──────────────────────────────────────────────────────
+
+
+class WebSocketStreamer:
+    """Push JPEG frames to the cloud dashboard over WebSocket (background thread)."""
+
+    def __init__(self, cfg: dict, frame_lock_ref, latest_frame_ref):
+        ws_base = cfg["endpoint"].replace("/api/ingest", "").rstrip("/")
+        ws_base = ws_base.replace("https://", "wss://").replace("http://", "ws://")
+        self._url = f"{ws_base}/ws/feed?api_key={cfg.get('api_key', '')}"
+        self._fps = cfg.get("stream_fps", 5)
+        self._frame_lock = frame_lock_ref
+        self._latest_frame_ref = latest_frame_ref
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        import websockets.sync.client as ws_client
+        interval = 1.0 / max(self._fps, 1)
+        backoff = 1.0
+        while self._running:
+            try:
+                with ws_client.connect(self._url, max_size=2**22) as ws:
+                    log.info("WebSocket stream connected to dashboard")
+                    backoff = 1.0
+                    while self._running:
+                        with self._frame_lock:
+                            frame = self._latest_frame_ref()
+                        if frame:
+                            ws.send(frame)
+                        time.sleep(interval)
+            except Exception as e:
+                log.warning("WebSocket stream error: %s (retry in %.0fs)", e, backoff)
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+
+    def stop(self) -> None:
+        self._running = False
+
+
 # ── MJPEG HTTP stream ──────────────────────────────────────────────────────
 
 latest_frame: bytes = b""
@@ -692,6 +734,12 @@ def main() -> None:
     cloud_pusher = None
     if cloud_cfg.get("enabled", False) and cloud_cfg.get("endpoint"):
         cloud_pusher = CloudPusher(cloud_cfg)
+
+    ws_streamer = None
+    if cloud_cfg.get("enabled", False) and cloud_cfg.get("endpoint"):
+        ws_streamer = WebSocketStreamer(
+            cloud_cfg, frame_lock, lambda: latest_frame,
+        )
 
     start_server(stream_cfg["port"])
     print(f"Dashboard: http://0.0.0.0:{stream_cfg['port']}/")

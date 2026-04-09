@@ -23,8 +23,33 @@
     padding: 16px 24px; display: flex; align-items: center; gap: 12px;
   }
   header h1 { font-size: 1.3em; font-weight: 600; }
-  header .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); }
+  header .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
   .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+  .video-section {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; margin-bottom: 24px; text-align: center; position: relative;
+  }
+  .video-section h2 { font-size: 1.1em; font-weight: 600; margin-bottom: 12px; }
+  .video-wrapper { position: relative; display: inline-block; max-width: 100%; }
+  .video-wrapper img {
+    max-width: 100%; max-height: 480px; border-radius: 6px;
+    border: 1px solid var(--border); display: block;
+  }
+  .live-badge {
+    position: absolute; top: 10px; left: 10px;
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(0,0,0,0.7); padding: 4px 10px; border-radius: 4px;
+    font-size: 0.8em; font-weight: 600;
+  }
+  .live-badge .indicator {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
+  }
+  .live-badge.connected .indicator { background: var(--red); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .offline-msg {
+    color: var(--muted); font-style: italic; padding: 60px 0;
+  }
 
   .stats-grid {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -85,6 +110,18 @@
 </header>
 
 <div class="container">
+  <div class="video-section">
+    <h2>Live Feed</h2>
+    <div class="video-wrapper" id="video-wrapper">
+      <p class="offline-msg" id="offline-msg">Waiting for camera feed...</p>
+      <img id="live-img" style="display:none" alt="Live feed">
+      <div class="live-badge" id="live-badge">
+        <div class="indicator"></div>
+        <span id="live-label">Offline</span>
+      </div>
+    </div>
+  </div>
+
   <div class="stats-grid">
     <div class="stat-card">
       <div class="value" id="s-count">--</div>
@@ -132,6 +169,47 @@ const STATUS_COLORS = {
 };
 let currentHours = 24;
 let chart = null;
+
+// ── WebSocket live video ──────────────────────────────────────────────────
+
+const liveImg = document.getElementById('live-img');
+const offlineMsg = document.getElementById('offline-msg');
+const liveBadge = document.getElementById('live-badge');
+const liveLabel = document.getElementById('live-label');
+let lastFrameAt = 0;
+let prevBlobUrl = null;
+
+function connectVideoWs() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${proto}//${location.host}/ws/view`);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onmessage = (e) => {
+    if (prevBlobUrl) URL.revokeObjectURL(prevBlobUrl);
+    const blob = new Blob([e.data], {type: 'image/jpeg'});
+    prevBlobUrl = URL.createObjectURL(blob);
+    liveImg.src = prevBlobUrl;
+    liveImg.style.display = 'block';
+    offlineMsg.style.display = 'none';
+    liveBadge.classList.add('connected');
+    liveLabel.textContent = 'Live';
+    lastFrameAt = Date.now();
+  };
+
+  ws.onclose = () => { setTimeout(connectVideoWs, 3000); };
+  ws.onerror = () => { ws.close(); };
+}
+
+setInterval(() => {
+  if (Date.now() - lastFrameAt > 5000 && lastFrameAt > 0) {
+    liveBadge.classList.remove('connected');
+    liveLabel.textContent = 'Offline';
+  }
+}, 2000);
+
+connectVideoWs();
+
+// ── Stats polling ─────────────────────────────────────────────────────────
 
 async function fetchLatest() {
   try {

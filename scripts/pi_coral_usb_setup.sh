@@ -49,7 +49,7 @@ python3.11 -m venv "${VENV}" --system-site-packages
 # shellcheck disable=SC1090
 source "${VENV}/bin/activate"
 pip install --upgrade pip
-pip install tflite-runtime 'numpy<2' pillow boto3
+pip install tflite-runtime 'numpy<2' pillow boto3 websockets
 
 # ── udev / plugdev ──────────────────────────────────────────────────────────
 sudo udevadm control --reload-rules

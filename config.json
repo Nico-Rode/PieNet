@@ -44,6 +44,7 @@
     "enabled": false,
     "endpoint": "https://pienet-dashboard-qghwo.ondigitalocean.app/api/ingest",
     "api_key": "",
-    "push_interval_seconds": 30
+    "push_interval_seconds": 30,
+    "stream_fps": 5
   }
 }

@@ -42,7 +42,7 @@
   },
   "cloud": {
     "enabled": false,
-    "endpoint": "https://pienet-dashboard-qghwo.ondigitalocean.app/api/ingest",
+    "endpoint": "https://pienet-dashboard-8npw7.ondigitalocean.app/api/ingest",
     "api_key": "",
     "push_interval_seconds": 30,
     "stream_fps": 5

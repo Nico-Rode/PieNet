@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+*.csv
+venv/
+coral-tpu-venv/
+.cache/
+*.egg-info/
+dist/
+build/
+.DS_Store

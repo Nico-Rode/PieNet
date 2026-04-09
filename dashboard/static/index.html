@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PieNet Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e;
+    --green: #3fb950; --yellow: #d29922; --orange: #db6d28; --red: #f85149;
+    --accent: #58a6ff;
+  }
+  * { margin: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    min-height: 100vh; padding: 0;
+  }
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 16px 24px; display: flex; align-items: center; gap: 12px;
+  }
+  header h1 { font-size: 1.3em; font-weight: 600; }
+  header .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); }
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px; margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 20px; text-align: center;
+  }
+  .stat-card .value { font-size: 2.2em; font-weight: 700; line-height: 1.1; }
+  .stat-card .label { color: var(--muted); font-size: 0.85em; margin-top: 4px; }
+
+  .chart-section {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 20px; margin-bottom: 24px;
+  }
+  .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .chart-header h2 { font-size: 1.1em; font-weight: 600; }
+  .range-btns { display: flex; gap: 6px; }
+  .range-btns button {
+    background: var(--bg); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.85em;
+  }
+  .range-btns button.active { color: var(--accent); border-color: var(--accent); }
+  .range-btns button:hover { color: var(--text); }
+
+  canvas { width: 100% !important; max-height: 320px; }
+
+  .snapshot-section {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 20px;
+  }
+  .snapshot-section h2 { font-size: 1.1em; font-weight: 600; margin-bottom: 12px; }
+  .snapshot-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .snapshot-grid img {
+    width: 100%; border-radius: 6px; border: 1px solid var(--border);
+    cursor: pointer; transition: transform 0.15s;
+  }
+  .snapshot-grid img:hover { transform: scale(1.02); }
+  .snapshot-grid .ts {
+    font-size: 0.8em; color: var(--muted); text-align: center; margin-top: 4px;
+  }
+  .empty { color: var(--muted); font-style: italic; }
+
+  @media (max-width: 600px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .stat-card .value { font-size: 1.6em; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="dot" id="status-dot"></div>
+  <h1>PieNet Dashboard</h1>
+</header>
+
+<div class="container">
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="value" id="s-count">--</div>
+      <div class="label">People in Line</div>
+    </div>
+    <div class="stat-card">
+      <div class="value" id="s-wait">--</div>
+      <div class="label">Est. Wait (min)</div>
+    </div>
+    <div class="stat-card">
+      <div class="value" id="s-status">--</div>
+      <div class="label">Status</div>
+    </div>
+    <div class="stat-card">
+      <div class="value" id="s-rate">--</div>
+      <div class="label">Min / Person</div>
+    </div>
+  </div>
+
+  <div class="chart-section">
+    <div class="chart-header">
+      <h2>Queue History</h2>
+      <div class="range-btns">
+        <button data-hours="1">1h</button>
+        <button data-hours="6">6h</button>
+        <button data-hours="24" class="active">24h</button>
+        <button data-hours="168">7d</button>
+      </div>
+    </div>
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="snapshot-section">
+    <h2>Recent Snapshots</h2>
+    <div class="snapshot-grid" id="snap-grid">
+      <p class="empty">No snapshots yet.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const STATUS_COLORS = {
+  'No line': '#3fb950', 'Short wait': '#d29922',
+  'Moderate wait': '#db6d28', 'Long wait': '#f85149',
+};
+let currentHours = 24;
+let chart = null;
+
+async function fetchLatest() {
+  try {
+    const r = await fetch('/api/latest');
+    const d = await r.json();
+    if (!d.timestamp) return;
+    document.getElementById('s-count').textContent = d.count ?? '--';
+    document.getElementById('s-wait').textContent = d.wait_min != null ? d.wait_min.toFixed(0) : '--';
+    document.getElementById('s-status').textContent = d.status || '--';
+    document.getElementById('s-status').style.color = STATUS_COLORS[d.status] || '#e6edf3';
+    document.getElementById('s-rate').textContent = d.service_rate ? parseFloat(d.service_rate).toFixed(1) : '--';
+    const dot = document.getElementById('status-dot');
+    dot.style.background = STATUS_COLORS[d.status] || '#3fb950';
+  } catch (e) {}
+}
+
+async function fetchHistory(hours) {
+  try {
+    const r = await fetch(`/api/history?hours=${hours}`);
+    return await r.json();
+  } catch (e) { return []; }
+}
+
+function buildChart(data) {
+  const labels = data.map(d => {
+    const dt = new Date(d.timestamp);
+    return dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  });
+  const counts = data.map(d => d.count);
+  const waits = data.map(d => d.wait_min);
+
+  const ctx = document.getElementById('chart').getContext('2d');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'People',
+          data: counts,
+          borderColor: '#58a6ff',
+          backgroundColor: 'rgba(88,166,255,0.1)',
+          fill: true,
+          tension: 0.3,
+          yAxisID: 'y',
+        },
+        {
+          label: 'Wait (min)',
+          data: waits,
+          borderColor: '#d29922',
+          backgroundColor: 'rgba(210,153,34,0.1)',
+          fill: true,
+          tension: 0.3,
+          yAxisID: 'y1',
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#8b949e' } },
+      },
+      scales: {
+        x: { ticks: { color: '#8b949e', maxTicksLimit: 12 }, grid: { color: '#21262d' } },
+        y: {
+          type: 'linear', position: 'left',
+          title: { display: true, text: 'People', color: '#58a6ff' },
+          ticks: { color: '#8b949e', stepSize: 1 },
+          grid: { color: '#21262d' },
+          beginAtZero: true,
+        },
+        y1: {
+          type: 'linear', position: 'right',
+          title: { display: true, text: 'Wait (min)', color: '#d29922' },
+          ticks: { color: '#8b949e' },
+          grid: { drawOnChartArea: false },
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+}
+
+function renderSnapshots(data) {
+  const grid = document.getElementById('snap-grid');
+  const snaps = data.filter(d => d.snapshot_url).slice(-12).reverse();
+  if (!snaps.length) {
+    grid.innerHTML = '<p class="empty">No snapshots yet.</p>';
+    return;
+  }
+  grid.innerHTML = snaps.map(d => `
+    <div>
+      <img src="${d.snapshot_url}" alt="snapshot" loading="lazy"
+           onclick="window.open(this.src,'_blank')">
+      <div class="ts">${new Date(d.timestamp).toLocaleString()}</div>
+    </div>
+  `).join('');
+}
+
+async function refresh() {
+  await fetchLatest();
+  const data = await fetchHistory(currentHours);
+  buildChart(data);
+  renderSnapshots(data);
+}
+
+document.querySelectorAll('.range-btns button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelector('.range-btns .active')?.classList.remove('active');
+    btn.classList.add('active');
+    currentHours = parseFloat(btn.dataset.hours);
+    refresh();
+  });
+});
+
+refresh();
+setInterval(fetchLatest, 10000);
+setInterval(() => fetchHistory(currentHours).then(data => { buildChart(data); renderSnapshots(data); }), 60000);
+</script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "camera": {
+    "width": 640,
+    "height": 480
+  },
+  "detection": {
+    "confidence_threshold": 0.4,
+    "person_class_id": 0
+  },
+  "tracking": {
+    "max_disappeared": 15
+  },
+  "roi": {
+    "enabled": false,
+    "polygon": [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+  },
+  "wait_estimation": {
+    "minutes_per_person": 3.0,
+    "auto_learn": true,
+    "learning_interval_seconds": 300,
+    "status_thresholds": {
+      "no_line": 0,
+      "short": 3,
+      "moderate": 8,
+      "long": 15
+    }
+  },
+  "stream": {
+    "port": 8080
+  },
+  "logging": {
+    "enabled": true,
+    "csv_path": "~/pienet_log.csv",
+    "interval_seconds": 30
+  },
+  "snapshots": {
+    "enabled": false,
+    "interval_seconds": 300,
+    "spaces_bucket": "pienet-snapshots",
+    "spaces_region": "nyc3",
+    "spaces_endpoint": "https://nyc3.digitaloceanspaces.com"
+  },
+  "cloud": {
+    "enabled": false,
+    "endpoint": "https://your-dashboard.ondigitalocean.app/api/ingest",
+    "api_key": "",
+    "push_interval_seconds": 30
+  }
+}

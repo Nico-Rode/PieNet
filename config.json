@@ -1,11 +1,11 @@
 {
   "camera": {
-    "width": 320,
-    "height": 240,
+    "width": 640,
+    "height": 480,
     "capture_interval_seconds": 2
   },
   "detection": {
-    "confidence_threshold": 0.4,
+    "confidence_threshold": 0.25,
     "person_class_id": 0
   },
   "tracking": {

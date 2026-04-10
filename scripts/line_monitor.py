@@ -70,7 +70,7 @@ def read_labels(path: str) -> dict[int, str]:
 
 def load_config(path: str | None) -> dict:
     defaults = {
-        "camera": {"width": 320, "height": 240, "capture_interval_seconds": 2},
+        "camera": {"width": 640, "height": 480, "capture_interval_seconds": 2},
         "detection": {"confidence_threshold": 0.4, "person_class_id": 0},
         "tracking": {"max_disappeared": 15},
         "roi": {"enabled": False, "polygon": [[0, 0], [1, 0], [1, 1], [0, 1]]},

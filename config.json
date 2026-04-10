@@ -1,7 +1,8 @@
 {
   "camera": {
-    "width": 640,
-    "height": 480
+    "width": 320,
+    "height": 240,
+    "capture_interval_seconds": 2
   },
   "detection": {
     "confidence_threshold": 0.4,
@@ -45,6 +46,6 @@
     "endpoint": "https://pienet-dashboard-8npw7.ondigitalocean.app/api/ingest",
     "api_key": "75a8a2602daafb3c5b81dd6bc4e690d9f062f8edb896db57",
     "push_interval_seconds": 30,
-    "stream_fps": 5
+    "stream_fps": 2
   }
 }

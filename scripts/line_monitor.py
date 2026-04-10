@@ -70,7 +70,7 @@ def read_labels(path: str) -> dict[int, str]:
 
 def load_config(path: str | None) -> dict:
     defaults = {
-        "camera": {"width": 640, "height": 480},
+        "camera": {"width": 320, "height": 240, "capture_interval_seconds": 2},
         "detection": {"confidence_threshold": 0.4, "person_class_id": 0},
         "tracking": {"max_disappeared": 15},
         "roi": {"enabled": False, "polygon": [[0, 0], [1, 0], [1, 1], [0, 1]]},
@@ -747,8 +747,11 @@ def main() -> None:
     print(f"API:       http://0.0.0.0:{stream_cfg['port']}/api/status")
     print("Ctrl+C to stop.\n")
 
+    capture_interval = cam.get("capture_interval_seconds", 0)
+
     try:
         while True:
+            loop_start = time.monotonic()
             image = capture_frame(cam["width"], cam["height"])
             if image is None:
                 time.sleep(0.5)
@@ -812,6 +815,12 @@ def main() -> None:
 
             if csv_logger:
                 csv_logger.maybe_log(count, wait_min, status, mpp, tracker.total_ids_assigned)
+
+            if capture_interval > 0:
+                elapsed = time.monotonic() - loop_start
+                remaining = capture_interval - elapsed
+                if remaining > 0:
+                    time.sleep(remaining)
 
     except KeyboardInterrupt:
         print("\nStopped.")

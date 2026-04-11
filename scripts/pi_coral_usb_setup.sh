@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# PieNet setup — run ON the Raspberry Pi.
+# PieNet setup — run ON the Raspberry Pi (3B+, 4, or 5).
 # Installs libedgetpu (apt), Python 3.11 venv with tflite-runtime, and downloads models.
 set -euo pipefail
+
+PI_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || echo "unknown")
+echo "==> Detected board: ${PI_MODEL}"
 
 VENV="${HOME}/coral-tpu-venv"
 MODEL_DIR="${HOME}/.cache/pienet_models"
@@ -10,16 +13,24 @@ MODEL_DIR="${HOME}/.cache/pienet_models"
 echo "==> apt update..."
 sudo apt-get update
 
-echo "==> Adding Coral apt repo..."
-sudo install -d /usr/share/keyrings
-curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-  | sudo gpg --dearmor -o /usr/share/keyrings/coral-edgetpu.gpg 2>/dev/null || true
-echo "deb [signed-by=/usr/share/keyrings/coral-edgetpu.gpg] https://packages.cloud.google.com/apt coral-edgetpu-stable main" \
-  | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
-sudo apt-get update
-
 echo "==> Edge TPU runtime..."
-sudo apt-get install -y libedgetpu1-std
+DEBIAN_VERSION=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
+if [ "${DEBIAN_VERSION}" = "trixie" ]; then
+  echo "    Trixie detected — using feranick's compatible build..."
+  EDGETPU_DEB="libedgetpu1-std_16.0TF2.17.1-1.trixie_arm64.deb"
+  [ -f "/tmp/${EDGETPU_DEB}" ] || wget -q -O "/tmp/${EDGETPU_DEB}" \
+    "https://github.com/feranick/libedgetpu/releases/download/16.0TF2.17.1-1/${EDGETPU_DEB}"
+  sudo dpkg -i "/tmp/${EDGETPU_DEB}"
+else
+  echo "    Using standard Coral apt repo..."
+  sudo install -d /usr/share/keyrings
+  curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+    | sudo gpg --dearmor -o /usr/share/keyrings/coral-edgetpu.gpg 2>/dev/null || true
+  echo "deb [signed-by=/usr/share/keyrings/coral-edgetpu.gpg] https://packages.cloud.google.com/apt coral-edgetpu-stable main" \
+    | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
+  sudo apt-get update
+  sudo apt-get install -y libedgetpu1-std
+fi
 
 echo "==> rpicam-apps (camera capture)..."
 sudo apt-get install -y rpicam-apps-lite || sudo apt-get install -y rpicam-apps || true
@@ -28,7 +39,7 @@ sudo apt-get install -y rpicam-apps-lite || sudo apt-get install -y rpicam-apps 
 if ! command -v python3.11 >/dev/null 2>&1; then
   echo "==> python3.11 not found; checking if it needs to be built from source..."
   if ! sudo apt-get install -y python3.11 python3.11-venv 2>/dev/null; then
-    echo "==> Building Python 3.11 from source (takes ~15 min on Pi 5)..."
+    echo "==> Building Python 3.11 from source (Pi 5 ~15 min, Pi 3B+ ~45 min)..."
     sudo apt-get install -y build-essential libssl-dev libffi-dev libbz2-dev \
       libreadline-dev libsqlite3-dev libncursesw5-dev liblzma-dev tk-dev zlib1g-dev wget
     cd /tmp

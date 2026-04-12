@@ -112,6 +112,16 @@ async def ingest(request: Request, x_api_key: str | None = Header(None)):
     return {"ok": True}
 
 
+# ── Clear history ──────────────────────────────────────────────────────
+
+@app.post("/api/clear")
+async def clear_history(x_api_key: str | None = Header(None)):
+    _verify_key(x_api_key)
+    with open(CSV_PATH, "w", newline="") as f:
+        csv.DictWriter(f, fieldnames=CSV_FIELDS).writeheader()
+    return {"ok": True, "message": "history cleared"}
+
+
 # ── History endpoint ────────────────────────────────────────────────────────
 
 @app.get("/api/history")

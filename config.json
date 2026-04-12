@@ -9,7 +9,9 @@
     "person_class_id": 0
   },
   "tracking": {
-    "max_disappeared": 15
+    "max_disappeared": 15,
+    "min_dwell_seconds": 10,
+    "max_velocity": 0.02
   },
   "roi": {
     "enabled": false,

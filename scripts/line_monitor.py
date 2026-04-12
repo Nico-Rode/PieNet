@@ -72,7 +72,7 @@ def load_config(path: str | None) -> dict:
     defaults = {
         "camera": {"width": 640, "height": 480, "capture_interval_seconds": 2},
         "detection": {"confidence_threshold": 0.4, "person_class_id": 0},
-        "tracking": {"max_disappeared": 15},
+        "tracking": {"max_disappeared": 15, "min_dwell_seconds": 10, "max_velocity": 0.02},
         "roi": {"enabled": False, "polygon": [[0, 0], [1, 0], [1, 1], [0, 1]]},
         "wait_estimation": {
             "minutes_per_person": 3.0,
@@ -210,13 +210,20 @@ def _nms(detections: list[dict], iou_threshold: float) -> list[dict]:
 
 
 class CentroidTracker:
-    """Track detected people across frames using centroid distance matching."""
+    """Track detected people across frames using centroid distance matching.
 
-    def __init__(self, max_disappeared: int = 15):
+    Also tracks per-person dwell time and velocity to distinguish people
+    waiting in line from pedestrians walking by.
+    """
+
+    def __init__(self, max_disappeared: int = 15, history_len: int = 5):
         self._next_id = 0
         self._objects: dict[int, np.ndarray] = {}
         self._disappeared: dict[int, int] = {}
         self._max_disappeared = max_disappeared
+        self._first_seen: dict[int, float] = {}
+        self._centroid_history: dict[int, collections.deque] = {}
+        self._history_len = history_len
 
     @property
     def object_count(self) -> int:
@@ -230,12 +237,42 @@ class CentroidTracker:
         oid = self._next_id
         self._objects[oid] = centroid
         self._disappeared[oid] = 0
+        self._first_seen[oid] = time.time()
+        self._centroid_history[oid] = collections.deque(maxlen=self._history_len)
+        self._centroid_history[oid].append(centroid.copy())
         self._next_id += 1
         return oid
 
     def _deregister(self, oid: int) -> None:
         del self._objects[oid]
         del self._disappeared[oid]
+        self._first_seen.pop(oid, None)
+        self._centroid_history.pop(oid, None)
+
+    def dwell_time(self, oid: int) -> float:
+        """Seconds since this object was first seen."""
+        return time.time() - self._first_seen.get(oid, time.time())
+
+    def velocity(self, oid: int) -> float:
+        """Average frame-to-frame movement in normalized coordinates."""
+        hist = self._centroid_history.get(oid)
+        if not hist or len(hist) < 2:
+            return 0.0
+        dists = [
+            np.linalg.norm(hist[i] - hist[i - 1])
+            for i in range(1, len(hist))
+        ]
+        return float(np.mean(dists))
+
+    def get_line_occupants(
+        self, tracked: dict[int, dict], min_dwell: float = 10.0, max_vel: float = 0.02,
+    ) -> dict[int, dict]:
+        """Return only tracked people who are dwelling and stationary (likely in line)."""
+        result = {}
+        for oid, det in tracked.items():
+            if self.dwell_time(oid) >= min_dwell and self.velocity(oid) <= max_vel:
+                result[oid] = det
+        return result
 
     def update(self, detections: list[dict]) -> dict[int, dict]:
         """Match detections to tracked objects; return {object_id: detection_dict}."""
@@ -283,6 +320,8 @@ class CentroidTracker:
             oid = object_ids[row]
             self._objects[oid] = input_centroids[col]
             self._disappeared[oid] = 0
+            if oid in self._centroid_history:
+                self._centroid_history[oid].append(input_centroids[col].copy())
             tracked[oid] = detections[col]
             used_rows.add(row)
             used_cols.add(col)
@@ -799,7 +838,12 @@ def main() -> None:
                 detections = filter_roi(detections, roi_cfg["polygon"])
 
             tracked = tracker.update(detections)
-            count = tracker.object_count
+            raw_count = tracker.object_count
+
+            min_dwell = trk_cfg.get("min_dwell_seconds", 10.0)
+            max_vel = trk_cfg.get("max_velocity", 0.02)
+            line_tracked = tracker.get_line_occupants(tracked, min_dwell, max_vel)
+            count = len(line_tracked)
 
             mpp = wait_cfg["minutes_per_person"]
             if rate_learner:
@@ -813,10 +857,11 @@ def main() -> None:
             current_stats = {
                 "count": count, "wait": wait_min, "status": status,
                 "mpp": mpp, "total_tracked": tracker.total_ids_assigned,
+                "raw_count": raw_count,
             }
 
             roi_poly = roi_cfg["polygon"] if roi_cfg["enabled"] else None
-            annotated = annotate_frame(image, tracked, count, wait_min, status, roi_poly)
+            annotated = annotate_frame(image, line_tracked, count, wait_min, status, roi_poly)
 
             buf = io.BytesIO()
             annotated.save(buf, format="JPEG", quality=80)
@@ -842,8 +887,8 @@ def main() -> None:
 
             ts = datetime.now().strftime("%H:%M:%S")
             print(
-                f"[{ts}] People: {count}  Wait: {wait_min:.0f} min  "
-                f"Status: {status}  MPP: {mpp:.1f}",
+                f"[{ts}] Detected: {raw_count}  In line: {count}  "
+                f"Wait: {wait_min:.0f} min  Status: {status}  MPP: {mpp:.1f}",
                 flush=True,
             )
 

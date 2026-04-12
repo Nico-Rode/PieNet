@@ -149,7 +149,10 @@ class PersonDetector:
         self._h = int(self._inp["shape"][1])
         self._w = int(self._inp["shape"][2])
 
-    def detect(self, image: Image.Image, threshold: float, person_class: int) -> list[dict]:
+    def detect(
+        self, image: Image.Image, threshold: float, person_class: int,
+        nms_iou: float = 0.5, min_box_area: float = 0.002,
+    ) -> list[dict]:
         resized = image.resize((self._w, self._h), Image.LANCZOS)
         input_data = np.asarray(resized, dtype=np.uint8)[np.newaxis]
         self.interpreter.set_tensor(self._inp["index"], input_data)
@@ -167,11 +170,40 @@ class PersonDetector:
             if int(classes[i]) != person_class:
                 continue
             ymin, xmin, ymax, xmax = boxes[i]
+            area = (xmax - xmin) * (ymax - ymin)
+            if area < min_box_area:
+                continue
             results.append({
                 "box": (float(xmin), float(ymin), float(xmax), float(ymax)),
                 "score": float(scores[i]),
             })
-        return results
+        return _nms(results, nms_iou)
+
+
+def _iou(a: tuple, b: tuple) -> float:
+    """Intersection-over-Union for two (xmin, ymin, xmax, ymax) boxes."""
+    x0 = max(a[0], b[0])
+    y0 = max(a[1], b[1])
+    x1 = min(a[2], b[2])
+    y1 = min(a[3], b[3])
+    inter = max(0, x1 - x0) * max(0, y1 - y0)
+    area_a = (a[2] - a[0]) * (a[3] - a[1])
+    area_b = (b[2] - b[0]) * (b[3] - b[1])
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _nms(detections: list[dict], iou_threshold: float) -> list[dict]:
+    """Suppress overlapping boxes, keeping the highest-scoring ones."""
+    if len(detections) <= 1:
+        return detections
+    dets = sorted(detections, key=lambda d: d["score"], reverse=True)
+    keep = []
+    while dets:
+        best = dets.pop(0)
+        keep.append(best)
+        dets = [d for d in dets if _iou(best["box"], d["box"]) < iou_threshold]
+    return keep
 
 
 # ── Centroid Tracker ────────────────────────────────────────────────────────
@@ -758,7 +790,9 @@ def main() -> None:
                 continue
 
             detections = detector.detect(
-                image, det["confidence_threshold"], det["person_class_id"]
+                image, det["confidence_threshold"], det["person_class_id"],
+                nms_iou=det.get("nms_iou_threshold", 0.5),
+                min_box_area=det.get("min_box_area", 0.002),
             )
 
             if roi_cfg["enabled"]:

@@ -5,7 +5,7 @@
     "capture_interval_seconds": 2
   },
   "detection": {
-    "confidence_threshold": 0.25,
+    "confidence_threshold": 0.4,
     "person_class_id": 0
   },
   "tracking": {
